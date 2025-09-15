@@ -83,23 +83,22 @@
     }
 
     function roadCoefFromSelect(val){
-      if (val === 'dirt') return 800;
-      if (val === 'rocky') return 400;
+      if (val === 'dirt') return 1000;
+      if (val === 'rocky') return 500;
       return 0;
     }
 
     function lengthCoef(m){
       if (!isFinite(m)) return 0;
-      if (m >= 6) return 700;
-      if (m >= 5) return 400;
+      if (m >= 6) return 1000;
+      if (m >= 5) return 600;
       return 0;
     }
 
     function weightCoef(kg){
       if (!isFinite(kg)) return 0;
-      if (kg > 2000) return 1000;
-      if (kg > 1500) return 700;
-      if (kg > 1000) return 400;
+      if (kg > 2000) return 2000;
+      if (kg > 1500) return 1500;
       return 0;
     }
 
@@ -114,7 +113,7 @@
       const roadType = document.getElementById('roadType').value;
       const km = U.num(document.getElementById('distanceKm').value,1);
 
-      const baseFare = km*12;
+      const baseFare = km*14; // новий тариф за 1 км
       let total = Math.round(baseFare + lengthCoef(lengthM) + weightCoef(weightKg) + roadCoefFromSelect(roadType));
       // Кастомне заокруглення до сотень (1350 і більше → 1400, інакше → 1300)
       if(total % 100 !== 0){
