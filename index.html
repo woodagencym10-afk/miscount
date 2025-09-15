@@ -87,15 +87,6 @@
       return r;
     }
     function isRouteRegionInput(input){ return ROUTE_REGIONS.includes(normalizeRegion(input)); }
-    function regionHub(normRegion){
-      switch(normRegion){
-        case 'рівненська': return 'Рівне, Україна';
-        case 'волинська': return 'Луцьк, Україна';
-        case 'тернопільська': return 'Тернопіль, Україна';
-        case 'львівська': return 'Львів, Україна';
-        default: return 'Львів, Україна';
-      }
-    }
 
     function roadCoefFromSelect(val){ if (val==='dirt') return 800; if (val==='rocky') return 400; return 0; }
     function lengthCoef(m){ if (!isFinite(m)) return 0; if (m>=6) return 1000; if (m>=5) return 600; return 0; }
@@ -111,7 +102,16 @@
       const lengthM=U.num(document.getElementById('lengthM').value,2);
       const roadType=document.getElementById('roadType').value;
       const km=U.num(document.getElementById('distanceKm').value,1);
-      const baseFare=km*14;
+      const regionInput=document.getElementById('regionInput').value||'';
+
+      // Тарифи: для Львівської області — базова 1000 грн + 12 грн/км, інакше 14 грн/км
+      let baseFare;
+      if (normalizeRegion(regionInput) === 'львівська') {
+        baseFare = 1000 + km*12;
+      } else {
+        baseFare = km*14;
+      }
+
       let total=Math.round(baseFare+lengthCoef(lengthM)+weightCoef(weightKg)+roadCoefFromSelect(roadType));
       if(total%100!==0){ const hundreds=Math.floor(total/100)*100; total=(total-hundreds>=50)?hundreds+100:hundreds; }
       document.getElementById('totalPrice').textContent=U.fmt(total)+" грн";
