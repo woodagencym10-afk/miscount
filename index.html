@@ -111,7 +111,7 @@
   <input type="hidden" id="distanceKm" />
 
   <script>
-    // Утиліти для чисел / форматування
+    // Утиліти
     const U = {
       num: (v, d = 0) => (isFinite(+v) ? +(+v).toFixed(d) : 0),
       fmt: (n) => new Intl.NumberFormat("uk-UA").format(Math.round(n)),
@@ -125,7 +125,6 @@
 
     const TRUCK = { maxWeightKg: 2500, cargoLenM: 4.2 };
 
-    // Дозволені області маршруту (включно з Закарпатською)
     const ROUTE_REGIONS = [
       "львівська",
       "волинська",
@@ -134,22 +133,16 @@
       "закарпатська",
     ];
 
-    const MAX_DEVIATION_KM = 100; // допустиме відхилення від основного маршруту
+    const MAX_DEVIATION_KM = 100;
 
-    // Опорні міста для перевірки відхилення від траси
     function regionHub(normRegion) {
       switch (normRegion) {
-        case "рівненська":
-          return "Рівне, Україна";
-        case "волинська":
-          return "Луцьк, Україна";
-        case "тернопільська":
-          return "Тернопіль, Україна";
-        case "закарпатська":
-          return "Ужгород, Україна";
+        case "рівненська":   return "Рівне, Україна";
+        case "волинська":    return "Луцьк, Україна";
+        case "тернопільська":return "Тернопіль, Україна";
+        case "закарпатська": return "Ужгород, Україна";
         case "львівська":
-        default:
-          return "Львів, Україна";
+        default:             return "Львів, Україна";
       }
     }
 
@@ -178,16 +171,16 @@
       return 0;
     }
 
-    // НОВА логіка по вазі (для всіх областей)
+    // Коефіцієнт ваги — для всіх областей
     function weightCoef(kg) {
       if (!isFinite(kg) || kg <= 0) return 0;
 
-      if (kg > 2000) return 2000;      // понад 2000 кг
-      if (kg >= 1001) return 1000;     // 1001–2000
-      if (kg >= 800)  return 800;      // 800–1000
-      if (kg >= 500)  return 500;      // 500–799
+      if (kg > 2000)  return 2000; // понад 2000 кг
+      if (kg >= 1001) return 1000; // 1001–2000
+      if (kg >= 800)  return 800;  // 800–1000
+      if (kg >= 500)  return 500;  // 500–799
 
-      return 0;                        // до 499 кг – без націнки
+      return 0;                    // до 499 кг
     }
 
     function showErr(msg) {
@@ -214,7 +207,7 @@
       b.textContent = "";
     }
 
-    // ГОЛОВНА ФУНКЦІЯ РОЗРАХУНКУ
+    // ГОЛОВНИЙ РОЗРАХУНОК
     function compute() {
       const cityRaw   = document.getElementById("destination").value || "";
       const cityNorm  = cityRaw.trim().toLowerCase();
@@ -225,44 +218,42 @@
       const regionRaw = document.getElementById("regionInput").value || "";
       const regionNorm = normalizeRegion(regionRaw);
 
-      // 1. БАЗА ПО КМ
-      // Львівська: 12 грн/км
-      // Інші (Рівненська, Волинська, Тернопільська, Закарпатська): 14 грн/км
-      let baseFare;
+      // 1. Тариф по кілометражу
+      let perKm;
       if (regionNorm === "львівська") {
-        baseFare = km * 12;
+        perKm = 12;
       } else {
-        baseFare = km * 14;
+        perKm = 14;
       }
 
-      // 2. КМ + ДОВЖИНА + ДОРОГА + ВАГА + 400
-      let total =
-        baseFare +
-        lengthCoef(lengthM) +
-        roadCoefFromSelect(roadType) +
-        weightCoef(weightKg) +
-        400;
+      const kmFare = km * perKm;
 
-      // Закарпатська область — +1500 грн до вартості
+      // 2. Коефіцієнти
+      const lenFee   = lengthCoef(lengthM);
+      const roadFee  = roadCoefFromSelect(roadType);
+      const weightFee= weightCoef(weightKg);
+
+      // 3. Універсальна націнка
+      let extra = kmFare + lenFee + roadFee + weightFee + 400;
+
+      // 4. Закарпатська область +1500
       if (regionNorm === "закарпатська") {
-        total += 1500;
+        extra += 1500;
       }
 
-      // 3. МІНІМАЛКИ / МАКСИМУМИ
+      // 5. Базова сума по регіону
+      let base = 0;
       let minTotal = 0;
       let maxTotal = Infinity;
 
-      // Львівська область: мінімум 2000
       if (regionNorm === "львівська") {
-        minTotal = 2000;
-
-        // Брюховичі: мінімум 2500
+        base = 2000; // база по Львівській
         if (cityNorm === "брюховичі") {
-          minTotal = 2500;
+          base = 2500; // спецмінімалка для Брюховичів
         }
       }
 
-      // Рівненська / Волинська / Тернопільська: 2000–5000
+      // Для Рівненської/Волинської/Тернопільської – діапазон 2000–5000
       if (
         regionNorm === "рівненська" ||
         regionNorm === "волинська" ||
@@ -272,11 +263,14 @@
         maxTotal = 5000;
       }
 
-      // застосовуємо мінімалку / максимум до ВЖЕ ПОВНОЇ СУМИ
+      // 6. Складаємо все
+      let total = base + extra;
+
+      // 7. Застосовуємо мін/макс (для тих, кого це стосується)
       if (minTotal && total < minTotal) total = minTotal;
       if (isFinite(maxTotal) && total > maxTotal) total = maxTotal;
 
-      // 4. ОКРУГЛЕННЯ ДО СОТЕНЬ
+      // 8. Округлення до сотень
       total = Math.round(total);
       if (total % 100 !== 0) {
         const hundreds = Math.floor(total / 100) * 100;
@@ -286,7 +280,7 @@
       document.getElementById("totalPrice").textContent =
         U.fmt(total) + " грн";
 
-      // 5. ПОПЕРЕДЖЕННЯ ПО ВАЗІ / ДОВЖИНІ
+      // 9. Попередження по вазі/довжині
       const cap = document.getElementById("capacityNote");
       let warn = [];
       if (weightKg > TRUCK.maxWeightKg)
@@ -302,7 +296,6 @@
       }
     }
 
-    // ОТРИМАННЯ ДИСТАНЦІЇ ЧЕРЕЗ GOOGLE MAPS
     function fetchDistanceKm(callback) {
       const city        = document.getElementById("destination").value || "";
       const regionInput = document.getElementById("regionInput").value || "";
@@ -317,13 +310,10 @@
       }
 
       if (!mapsReady || !window.google || !google.maps) {
-        showErr(
-          "Google Maps API не завантажено. Перевірте ключ, білінг та обмеження."
-        );
+        showErr("Google Maps API не завантажено. Перевірте ключ, білінг та обмеження.");
         return;
       }
 
-      // Перевірка області по маршруту (Закарпатська теж включена)
       if (!isRouteRegionInput(regionInput)) {
         const msg =
           "Доставка не по маршруту — уточніть вартість попутного транспорту, або ж скористайтесь прорахунком Delivery";
@@ -372,7 +362,6 @@
         });
       }
 
-      // 1) Перевірка відхилення: хаб області → населений пункт
       dm([hub], [fullAddress])
         .then((devKm) => {
           if (devKm > MAX_DEVIATION_KM) {
@@ -385,7 +374,6 @@
             throw new Error("OFF_ROUTE");
           }
           hideOffRoute();
-          // 2) Основний кілометраж: Львів → пункт призначення
           return dm(["Львів, Україна"], [fullAddress]);
         })
         .then((km) => {
@@ -417,7 +405,7 @@
     });
   </script>
 
-  <!-- 🔑 ТУТ ВСТАВ СВІЙ GOOGLE MAPS API KEY З GOOGLE CLOUD CONSOLE -->
+  <!-- 🔑 Сюди встав свій Google Maps API KEY -->
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDFR9n0yr9SEPDWGyH1G_dDJBit7bxvy_Y&libraries=places&callback=initMaps" async defer></script>
 </body>
 </html>
