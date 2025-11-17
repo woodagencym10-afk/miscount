@@ -1,190 +1,234 @@
-<!DOCTYPE html>
-<html lang="uk">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Калькулятор доставки</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    .card { @apply bg-white rounded-2xl shadow p-6; }
-    .btn { @apply px-4 py-2 rounded-xl font-semibold transition border hover:shadow; }
-  </style>
-</head>
-<body class="bg-gray-50 text-gray-900">
-  <div class="max-w-xl mx-auto p-6">
-    <h1 class="text-2xl md:text-3xl font-bold mb-4">Калькулятор вартості доставки</h1>
+<script>
+  const U = {
+    num: (v, d = 0) => isFinite(+v) ? +(+v).toFixed(d) : 0,
+    fmt: (n) => new Intl.NumberFormat('uk-UA').format(Math.round(n))
+  };
+  let mapsReady = false;
+  function initMaps() { mapsReady = true; }
+  window.initMaps = initMaps;
 
-    <section class="card space-y-4">
-      <div>
-        <label class="text-sm text-gray-600">Відправна точка</label>
-        <input class="w-full mt-1 rounded-xl border px-3 py-2 bg-gray-100 cursor-not-allowed" value="Львів" disabled />
-      </div>
-      <div>
-        <label class="text-sm text-gray-600">Населений пункт</label>
-        <input id="destination" class="w-full mt-1 rounded-xl border px-3 py-2" placeholder="Вкажіть місто" />
-      </div>
-      <div>
-        <label class="text-sm text-gray-600">Область</label>
-        <input id="regionInput" class="w-full mt-1 rounded-xl border px-3 py-2" placeholder="Вкажіть область" />
-      </div>
-      <div>
-        <label class="text-sm text-gray-600">Вага (кг)</label>
-        <input id="weightKg" type="number" min="1" step="1" class="w-full mt-1 rounded-xl border px-3 py-2" placeholder="Напр. 1200" />
-      </div>
-      <div>
-        <label class="text-sm text-gray-600">Метраж (довжина вантажу, м)</label>
-        <input id="lengthM" type="number" min="1" step="0.1" class="w-full mt-1 rounded-xl border px-3 py-2" placeholder="3–6" />
-      </div>
-      <div>
-        <label class="text-sm text-gray-600">Тип дороги</label>
-        <select id="roadType" class="w-full mt-1 rounded-xl border px-3 py-2">
-          <option value="asphalt">Асфальт</option>
-          <option value="rocky">Кам'яниста</option>
-          <option value="dirt">Ґрунтова</option>
-        </select>
-      </div>
+  const TRUCK = { maxWeightKg: 2500, cargoLenM: 4.2 };
+  // ДОДАВ ЗАКАРПАТСЬКУ
+  const ROUTE_REGIONS = ['львівська', 'волинська', 'рівненська', 'тернопільська', 'закарпатська'];
+  const MAX_DEVIATION_KM = 100;
 
-      <div class="flex gap-3 pt-2">
-        <button type="button" id="btnCalc" class="btn bg-gray-900 text-white border-gray-900">Розрахувати</button>
-        <button type="button" id="btnReset" class="btn border-gray-300">Скинути</button>
-      </div>
-
-      <p id="capacityNote" class="mt-1 text-sm hidden"></p>
-      <div id="errBox" class="mt-2 hidden text-sm p-3 rounded-xl bg-red-50 text-red-700 border border-red-300"></div>
-      <div id="offRouteBox" class="mt-2 hidden text-sm p-3 rounded-xl bg-yellow-50 text-yellow-700 border border-yellow-300"></div>
-    </section>
-
-    <aside class="card mt-6 bg-green-100">
-      <div class="text-sm text-gray-700">Сума до оплати</div>
-      <div id="totalPrice" class="text-3xl font-extrabold">—</div>
-    </aside>
-  </div>
-
-  <input type="hidden" id="distanceKm" />
-
-  <script>
-    const U = { num: (v,d=0)=>isFinite(+v)?+ (+v).toFixed(d):0, fmt: (n)=>new Intl.NumberFormat('uk-UA').format(Math.round(n)) };
-    let mapsReady = false; function initMaps(){ mapsReady = true; } window.initMaps = initMaps;
-
-    const TRUCK = { maxWeightKg: 2500, cargoLenM: 4.2 };
-    const ROUTE_REGIONS = ['львівська','волинська','рівненська','тернопільська'];
-    const MAX_DEVIATION_KM = 100; // допустиме відхилення від основного маршруту
-    // Опорні міста для перевірки відхилення від траси
-    function regionHub(normRegion){
-      switch(normRegion){
-        case 'рівненська': return 'Рівне, Україна';
-        case 'волинська': return 'Луцьк, Україна';
-        case 'тернопільська': return 'Тернопіль, Україна';
-        case 'львівська': return 'Львів, Україна';
-        default: return 'Львів, Україна';
-      }
+  function regionHub(normRegion) {
+    switch (normRegion) {
+      case 'рівненська': return 'Рівне, Україна';
+      case 'волинська': return 'Луцьк, Україна';
+      case 'тернопільська': return 'Тернопіль, Україна';
+      case 'львівська': return 'Львів, Україна';
+      case 'закарпатська': return 'Ужгород, Україна'; // 🔹 новий хаб
+      default: return 'Львів, Україна';
     }
-    function normalizeRegion(s){
-      if(!s) return '';
-      let r = String(s).toLowerCase();
-      r = r.replace('область','').replace('обл.','').replace('обл','');
-      r = r.split(' ').join('').trim();
-      return r;
-    }
-    function isRouteRegionInput(input){ return ROUTE_REGIONS.includes(normalizeRegion(input)); }
+  }
 
-    function roadCoefFromSelect(val){ if (val==='dirt') return 800; if (val==='rocky') return 400; return 0; }
-    function lengthCoef(m){ if (!isFinite(m)) return 0; if (m>=6) return 1000; if (m>=5) return 600; return 0; }
-    function weightCoef(kg){ if (!isFinite(kg)) return 0; if (kg>2000) return 2000; if (kg>1500) return 1000; return 0; }
+  function normalizeRegion(s) {
+    if (!s) return '';
+    let r = String(s).toLowerCase();
+    r = r.replace('область', '').replace('обл.', '').replace('обл', '');
+    r = r.split(' ').join('').trim();
+    return r;
+  }
 
-    function showErr(msg){ const b=document.getElementById('errBox'); b.textContent=msg; b.classList.remove('hidden'); }
-    function hideErr(){ const b=document.getElementById('errBox'); b.classList.add('hidden'); b.textContent=''; }
-    function showOffRoute(msg){ const b=document.getElementById('offRouteBox'); b.textContent=msg; b.classList.remove('hidden'); }
-    function hideOffRoute(){ const b=document.getElementById('offRouteBox'); b.classList.add('hidden'); b.textContent=''; }
+  function isRouteRegionInput(input) { return ROUTE_REGIONS.includes(normalizeRegion(input)); }
 
-    function compute(){
-      const weightKg=U.num(document.getElementById('weightKg').value,0);
-      const lengthM=U.num(document.getElementById('lengthM').value,2);
-      const roadType=document.getElementById('roadType').value;
-      const km=U.num(document.getElementById('distanceKm').value,1);
-      const regionInput=document.getElementById('regionInput').value||'';
+  function roadCoefFromSelect(val) { if (val === 'dirt') return 800; if (val === 'rocky') return 400; return 0; }
+  function lengthCoef(m) {
+    if (!isFinite(m)) return 0;
+    if (m >= 6) return 1000;
+    if (m >= 5) return 600;
+    return 0;
+  }
+  function weightCoef(kg) {
+    if (!isFinite(kg)) return 0;
+    if (kg > 2000) return 2000;
+    if (kg > 1500) return 1000;
+    return 0;
+  }
 
-      // Тарифи: для Львівської області — базова 1000 грн + 12 грн/км, інакше 14 грн/км
-      let baseFare;
-      if (normalizeRegion(regionInput) === 'львівська') {
-        baseFare = 1000 + km*12;
-      } else {
-        baseFare = km*14;
-      }
+  function showErr(msg) {
+    const b = document.getElementById('errBox');
+    b.textContent = msg;
+    b.classList.remove('hidden');
+  }
+  function hideErr() {
+    const b = document.getElementById('errBox');
+    b.classList.add('hidden');
+    b.textContent = '';
+  }
+  function showOffRoute(msg) {
+    const b = document.getElementById('offRouteBox');
+    b.textContent = msg;
+    b.classList.remove('hidden');
+  }
+  function hideOffRoute() {
+    const b = document.getElementById('offRouteBox');
+    b.classList.add('hidden');
+    b.textContent = '';
+  }
 
-      let total=Math.round(baseFare+lengthCoef(lengthM)+weightCoef(weightKg)+roadCoefFromSelect(roadType));
-      if(total%100!==0){ const hundreds=Math.floor(total/100)*100; total=(total-hundreds>=50)?hundreds+100:hundreds; }
-      document.getElementById('totalPrice').textContent=U.fmt(total)+" грн";
-      const cap=document.getElementById('capacityNote'); let warn=[];
-      if(weightKg>TRUCK.maxWeightKg) warn.push('Вага > 2.5 т — інший транспорт.');
-      if(lengthM>6) warn.push('Довжина >6 м — інший транспорт.');
-      if(warn.length){ cap.classList.remove('hidden'); cap.textContent='⚠ '+warn.join(' ');} else { cap.classList.add('hidden'); cap.textContent=''; }
+  function compute() {
+    const city = (document.getElementById('destination').value || '').trim();
+    const weightKg = U.num(document.getElementById('weightKg').value, 0);
+    const lengthM = U.num(document.getElementById('lengthM').value, 2);
+    const roadType = document.getElementById('roadType').value;
+    const km = U.num(document.getElementById('distanceKm').value, 1);
+    const regionInput = document.getElementById('regionInput').value || '';
+
+    const regionNorm = normalizeRegion(regionInput);
+    const cityNorm = city.toLowerCase();
+
+    // === БАЗОВИЙ ТАРИФ ПО РЕГІОНАХ ===
+    let baseFare;
+    if (regionNorm === 'львівська') {
+      // Львівська: базова логіка як була
+      baseFare = 1000 + km * 12;
+    } else {
+      // Інші області (Рівненська, Волинська, Тернопільська, Закарпатська ...)
+      baseFare = km * 14;
     }
 
-    function fetchDistanceKm(callback){
-      const city=document.getElementById('destination').value||'';
-      const regionInput=document.getElementById('regionInput').value||'';
-      if(!city){ showErr('Введіть населений пункт.'); return; }
-      if(!regionInput){ showErr('Введіть область.'); return; }
-      if(!mapsReady||!window.google||!google.maps){ showErr('Google Maps API не завантажено. Перевірте ключ, білінг та обмеження.'); return; }
+    // Закарпаття: +1500 до стандартної суми
+    if (regionNorm === 'закарпатська') {
+      baseFare += 1500;
+    }
 
-      // Перевірка області по маршруту
-      if(!isRouteRegionInput(regionInput)){
-        const msg='Доставка не по маршруту — уточніть вартість попутного транспорту, або ж скористайтесь прорахунком Delivery';
-        showOffRoute(msg); document.getElementById('totalPrice').textContent='—'; return;
-      } else { hideOffRoute(); }
+    // Додаємо коефіцієнти
+    let total = baseFare
+      + lengthCoef(lengthM)
+      + weightCoef(weightKg)
+      + roadCoefFromSelect(roadType);
 
-      function regionForGeo(r){
-        const v = String(r||'').toLowerCase();
-        const hasWord = v.includes('область') || v.includes('обл');
-        return hasWord ? r : (r + ' область');
+    // === МІНІМАЛЬНІ / МАКСИМАЛЬНІ СУМИ ===
+    let minTotal = 0;
+    let maxTotal = Infinity;
+
+    // Львівська область: мінімум 2000
+    if (regionNorm === 'львівська') {
+      minTotal = 2000;
+
+      // Брюховичі як спецвипадок: мінімум 2500
+      if (cityNorm === 'брюховичі') {
+        minTotal = 2500;
       }
-      const fullAddress = `${city}, ${regionForGeo(regionInput)}, Україна`;
-      const hub = regionHub(normalizeRegion(regionInput));
+    }
 
-      const svc = new google.maps.DistanceMatrixService();
-      const OFF_ROUTE_MSG = 'Доставка не по маршруту — уточніть вартість попутного транспорту, або ж скористайтесь прорахунком Delivery';
+    // Рівне / Луцьк / Тернопіль (відповідні області):
+    // ціна в діапазоні 2000–5000
+    if (
+      regionNorm === 'рівненська' ||
+      regionNorm === 'волинська' ||
+      regionNorm === 'тернопільська'
+    ) {
+      minTotal = 2000;
+      maxTotal = 5000;
+    }
 
-      function dm(origins, destinations){
-        return new Promise((resolve,reject)=>{
-          svc.getDistanceMatrix({
-            origins, destinations,
-            travelMode:google.maps.TravelMode.DRIVING,
-            unitSystem:google.maps.UnitSystem.METRIC
-          },(res,st)=>{
-            if(st!=='OK'||!res?.rows?.length){ return reject(new Error('STATUS: '+st)); }
-            const el=res.rows[0]?.elements?.[0];
-            if(!el||el.status!=='OK'){ return reject(new Error('ELEMENT: '+(el?.status||'UNKNOWN'))); }
-            resolve(el.distance.value/1000);
-          });
-        });
-      }
+    // Застосовуємо мін/макс до суми
+    if (minTotal && total < minTotal) total = minTotal;
+    if (isFinite(maxTotal) && total > maxTotal) total = maxTotal;
 
-      // 1) Перевірка відхилення: опорний хаб області → населений пункт
-      dm([hub],[fullAddress])
-        .then(devKm=>{
-          if(devKm>MAX_DEVIATION_KM){
-            showOffRoute(`${OFF_ROUTE_MSG} (відхилення ${Math.round(devKm)} км > ${MAX_DEVIATION_KM} км)`);
-            document.getElementById('totalPrice').textContent='—';
-            throw new Error('OFF_ROUTE');
+    // Округлення до сотень
+    total = Math.round(total);
+    if (total % 100 !== 0) {
+      const hundreds = Math.floor(total / 100) * 100;
+      total = (total - hundreds >= 50) ? hundreds + 100 : hundreds;
+    }
+
+    document.getElementById('totalPrice').textContent = U.fmt(total) + " грн";
+
+    // Попередження по вазі/довжині
+    const cap = document.getElementById('capacityNote');
+    let warn = [];
+    if (weightKg > TRUCK.maxWeightKg) warn.push('Вага > 2.5 т — інший транспорт.');
+    if (lengthM > 6) warn.push('Довжина >6 м — інший транспорт.');
+    if (warn.length) {
+      cap.classList.remove('hidden');
+      cap.textContent = '⚠ ' + warn.join(' ');
+    } else {
+      cap.classList.add('hidden');
+      cap.textContent = '';
+    }
+  }
+
+  function fetchDistanceKm(callback) {
+    const city = document.getElementById('destination').value || '';
+    const regionInput = document.getElementById('regionInput').value || '';
+    if (!city) { showErr('Введіть населений пункт.'); return; }
+    if (!regionInput) { showErr('Введіть область.'); return; }
+    if (!mapsReady || !window.google || !google.maps) {
+      showErr('Google Maps API не завантажено. Перевірте ключ, білінг та обмеження.');
+      return;
+    }
+
+    if (!isRouteRegionInput(regionInput)) {
+      const msg = 'Доставка не по маршруту — уточніть вартість попутного транспорту, або ж скористайтесь прорахунком Delivery';
+      showOffRoute(msg);
+      document.getElementById('totalPrice').textContent = '—';
+      return;
+    } else {
+      hideOffRoute();
+    }
+
+    function regionForGeo(r) {
+      const v = String(r || '').toLowerCase();
+      const hasWord = v.includes('область') || v.includes('обл');
+      return hasWord ? r : (r + ' область');
+    }
+    const fullAddress = `${city}, ${regionForGeo(regionInput)}, Україна`;
+    const hub = regionHub(normalizeRegion(regionInput));
+
+    const svc = new google.maps.DistanceMatrixService();
+    const OFF_ROUTE_MSG =
+      'Доставка не по маршруту — уточніть вартість попутного транспорту, або ж скористайтесь прорахунком Delivery';
+
+    function dm(origins, destinations) {
+      return new Promise((resolve, reject) => {
+        svc.getDistanceMatrix({
+          origins, destinations,
+          travelMode: google.maps.TravelMode.DRIVING,
+          unitSystem: google.maps.UnitSystem.METRIC
+        }, (res, st) => {
+          if (st !== 'OK' || !res?.rows?.length) {
+            return reject(new Error('STATUS: ' + st));
           }
-          hideOffRoute();
-          // 2) Основний кілометраж: Львів → пункт призначення
-          return dm(['Львів, Україна'], [fullAddress]);
-        })
-        .then(km=>{ document.getElementById('distanceKm').value=U.num(km,1); hideErr(); if(callback) callback(); })
-        .catch(err=>{ if(err.message!=='OFF_ROUTE') showErr('Не вдалося отримати дистанцію: '+err.message); });
+          const el = res.rows[0]?.elements?.[0];
+          if (!el || el.status !== 'OK') {
+            return reject(new Error('ELEMENT: ' + (el?.status || 'UNKNOWN')));
+          }
+          resolve(el.distance.value / 1000);
+        });
+      });
     }
-    document.getElementById('btnCalc').addEventListener('click',()=>{ fetchDistanceKm(compute); });
-    document.getElementById('btnReset').addEventListener('click',()=>{
-      ['destination','regionInput','weightKg','lengthM'].forEach(id=>document.getElementById(id).value='');
-      document.getElementById('roadType').value='asphalt';
-      document.getElementById('capacityNote').classList.add('hidden');
-      document.getElementById('capacityNote').textContent='';
-      document.getElementById('totalPrice').textContent='—';
-      hideErr(); hideOffRoute();
-    });
-  </script>
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDFR9n0yr9SEPDWGyH1G_dDJBit7bxvy_Y&libraries=places&callback=initMaps" async defer></script>
-</body>
-</html>
+
+    dm([hub], [fullAddress])
+      .then(devKm => {
+        if (devKm > MAX_DEVIATION_KM) {
+          showOffRoute(`${OFF_ROUTE_MSG} (відхилення ${Math.round(devKm)} км > ${MAX_DEVIATION_KM} км)`);
+          document.getElementById('totalPrice').textContent = '—';
+          throw new Error('OFF_ROUTE');
+        }
+        hideOffRoute();
+        return dm(['Львів, Україна'], [fullAddress]);
+      })
+      .then(km => {
+        document.getElementById('distanceKm').value = U.num(km, 1);
+        hideErr();
+        if (callback) callback();
+      })
+      .catch(err => {
+        if (err.message !== 'OFF_ROUTE') showErr('Не вдалося отримати дистанцію: ' + err.message);
+      });
+  }
+
+  document.getElementById('btnCalc').addEventListener('click', () => { fetchDistanceKm(compute); });
+  document.getElementById('btnReset').addEventListener('click', () => {
+    ['destination', 'regionInput', 'weightKg', 'lengthM'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('roadType').value = 'asphalt';
+    document.getElementById('capacityNote').classList.add('hidden');
+    document.getElementById('capacityNote').textContent = '';
+    document.getElementById('totalPrice').textContent = '—';
+    hideErr(); hideOffRoute();
+  });
+</script>
