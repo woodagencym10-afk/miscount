@@ -5,11 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Калькулятор доставки</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    /* @apply тут у звичайному браузері не спрацює, але самі utility-класи вже стоять на елементах */
-    .card { @apply bg-white rounded-2xl shadow p-6; }
-    .btn { @apply px-4 py-2 rounded-xl font-semibold transition border hover:shadow; }
-  </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
   <div class="max-w-xl mx-auto p-6">
@@ -119,7 +114,7 @@
     // Утиліти для чисел / форматування
     const U = {
       num: (v, d = 0) => (isFinite(+v) ? +(+v).toFixed(d) : 0),
-      fmt: (n) => new Intl.NumberFormat('uk-UA').format(Math.round(n)),
+      fmt: (n) => new Intl.NumberFormat("uk-UA").format(Math.round(n)),
     };
 
     let mapsReady = false;
@@ -183,15 +178,16 @@
       return 0;
     }
 
+    // НОВА логіка по вазі (для всіх областей)
     function weightCoef(kg) {
-  if (!isFinite(kg) || kg <= 0) return 0;
+      if (!isFinite(kg) || kg <= 0) return 0;
 
-  if (kg > 2000) return 2000;      // понад 2000 кг
-  if (kg >= 1001) return 1000;     // 1001–2000
-  if (kg >= 800)  return 800;      // 800–1000
-  if (kg >= 500)  return 500;      // 500–799
+      if (kg > 2000) return 2000;      // понад 2000 кг
+      if (kg >= 1001) return 1000;     // 1001–2000
+      if (kg >= 800)  return 800;      // 800–1000
+      if (kg >= 500)  return 500;      // 500–799
 
-  return 0;                        // до 499 кг – без націнки
+      return 0;                        // до 499 кг – без націнки
     }
 
     function showErr(msg) {
@@ -218,18 +214,19 @@
       b.textContent = "";
     }
 
+    // ГОЛОВНА ФУНКЦІЯ РОЗРАХУНКУ
     function compute() {
-      const cityRaw = document.getElementById("destination").value || "";
-      const cityNorm = cityRaw.trim().toLowerCase();
-      const weightKg = U.num(document.getElementById("weightKg").value, 0);
-      const lengthM = U.num(document.getElementById("lengthM").value, 2);
-      const roadType = document.getElementById("roadType").value;
-      const km = U.num(document.getElementById("distanceKm").value, 1);
+      const cityRaw   = document.getElementById("destination").value || "";
+      const cityNorm  = cityRaw.trim().toLowerCase();
+      const weightKg  = U.num(document.getElementById("weightKg").value, 0);
+      const lengthM   = U.num(document.getElementById("lengthM").value, 2);
+      const roadType  = document.getElementById("roadType").value;
+      const km        = U.num(document.getElementById("distanceKm").value, 1);
       const regionRaw = document.getElementById("regionInput").value || "";
       const regionNorm = normalizeRegion(regionRaw);
 
-      // --- БАЗОВИЙ ТАРИФ ---
-      // Львівська область: 12 грн/км (без фіксованих +1000)
+      // 1. БАЗА ПО КМ
+      // Львівська: 12 грн/км
       // Інші (Рівненська, Волинська, Тернопільська, Закарпатська): 14 грн/км
       let baseFare;
       if (regionNorm === "львівська") {
@@ -238,22 +235,20 @@
         baseFare = km * 14;
       }
 
-      // Додаємо надбавки за довжину / вагу / тип дороги
+      // 2. КМ + ДОВЖИНА + ДОРОГА + ВАГА + 400
       let total =
         baseFare +
         lengthCoef(lengthM) +
+        roadCoefFromSelect(roadType) +
         weightCoef(weightKg) +
-        roadCoefFromSelect(roadType);
+        400;
 
-      // Універсальна націнка +400 грн для будь-якої доставки
-      total += 400;
-
-      // Закарпатська область — +1500 грн до стандартної суми
+      // Закарпатська область — +1500 грн до вартості
       if (regionNorm === "закарпатська") {
         total += 1500;
       }
 
-      // --- МІН / МАКС ПО РЕГІОНАХ / МІСТАХ ---
+      // 3. МІНІМАЛКИ / МАКСИМУМИ
       let minTotal = 0;
       let maxTotal = Infinity;
 
@@ -267,7 +262,7 @@
         }
       }
 
-      // Рівне / Луцьк / Тернопіль (області): діапазон 2000–5000
+      // Рівненська / Волинська / Тернопільська: 2000–5000
       if (
         regionNorm === "рівненська" ||
         regionNorm === "волинська" ||
@@ -277,11 +272,11 @@
         maxTotal = 5000;
       }
 
-      // Застосовуємо мінімальні/максимальні обмеження
+      // застосовуємо мінімалку / максимум до ВЖЕ ПОВНОЇ СУМИ
       if (minTotal && total < minTotal) total = minTotal;
       if (isFinite(maxTotal) && total > maxTotal) total = maxTotal;
 
-      // Округлення до сотень
+      // 4. ОКРУГЛЕННЯ ДО СОТЕНЬ
       total = Math.round(total);
       if (total % 100 !== 0) {
         const hundreds = Math.floor(total / 100) * 100;
@@ -291,7 +286,7 @@
       document.getElementById("totalPrice").textContent =
         U.fmt(total) + " грн";
 
-      // Попередження по вазі/довжині
+      // 5. ПОПЕРЕДЖЕННЯ ПО ВАЗІ / ДОВЖИНІ
       const cap = document.getElementById("capacityNote");
       let warn = [];
       if (weightKg > TRUCK.maxWeightKg)
@@ -307,8 +302,9 @@
       }
     }
 
+    // ОТРИМАННЯ ДИСТАНЦІЇ ЧЕРЕЗ GOOGLE MAPS
     function fetchDistanceKm(callback) {
-      const city = document.getElementById("destination").value || "";
+      const city        = document.getElementById("destination").value || "";
       const regionInput = document.getElementById("regionInput").value || "";
 
       if (!city) {
